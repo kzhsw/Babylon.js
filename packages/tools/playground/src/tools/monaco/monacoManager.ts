@@ -4,7 +4,7 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import type { GlobalState } from "../../globalState";
 import { Utilities } from "../utilities";
 import { Logger, Observable } from "@dev/core";
-import { debounce } from "ts-debounce";
+import { debounce } from "../debounce";
 import { v5 as uuidv5 } from "uuid";
 
 import { EditorHost } from "./editor/editorHost";
@@ -165,6 +165,7 @@ export class MonacoManager {
 
             globalState.onRunRequiredObservable.notifyObservers();
             this._hydrating = false;
+            this._files.setDirty(false);
 
             const lastLocalJson = ReadLastLocal(this.globalState);
             if (lastLocalJson) {
@@ -565,7 +566,7 @@ export class MonacoManager {
         ];
 
         // snapshot/version/local overrides
-        let snapshot = "";
+        let snapshot: string;
         if (window.location.search.indexOf("snapshot=") !== -1) {
             snapshot = window.location.search.split("snapshot=")[1].split("&")[0];
             for (let i = 0; i < declarations.length; i++) {
@@ -573,7 +574,7 @@ export class MonacoManager {
             }
         }
 
-        let version = "";
+        let version: string;
         if (window.location.search.indexOf("version=") !== -1) {
             version = window.location.search.split("version=")[1].split("&")[0];
             for (let i = 0; i < declarations.length; i++) {
@@ -587,7 +588,12 @@ export class MonacoManager {
             }
         }
 
-        if (location.href.indexOf("BabylonToolkit") !== -1 || Utilities.ReadBoolFromStore("babylon-toolkit", false) || Utilities.ReadBoolFromStore("babylon-toolkit-used", false)) {
+        const toolkitExplicit = localStorage.getItem("babylon-toolkit");
+        if (
+            location.href.indexOf("BabylonToolkit") !== -1 ||
+            Utilities.ReadBoolFromStore("babylon-toolkit", false) ||
+            (toolkitExplicit !== "false" && Utilities.ReadBoolFromStore("babylon-toolkit-used", false))
+        ) {
             declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/BabylonToolkit@master/Runtime/babylon.toolkit.d.ts");
             declarations.push("https://cdn.jsdelivr.net/gh/BabylonJS/BabylonToolkit@master/Runtime/default.playground.d.ts");
         }
@@ -762,7 +768,14 @@ export { Playground };`;
         this.globalState.importsMap = {};
         this.globalState.entryFilePath = undefined as any;
         this.globalState.activeFilePath = undefined as any;
-        this.globalState.currentSnippetToken = "";
+
+        // Only clear the snippet token when not loading a snippet.
+        // During loading, a language switch fires onLanguageChangedObservable which
+        // calls this method; clearing the token here would cause the next save to
+        // create a new snippet instead of incrementing the revision.
+        if (!this.globalState.loadingCodeInProgress) {
+            this.globalState.currentSnippetToken = "";
+        }
 
         this.globalState.onFilesChangedObservable.notifyObservers();
         this.globalState.onManifestChangedObservable.notifyObservers();

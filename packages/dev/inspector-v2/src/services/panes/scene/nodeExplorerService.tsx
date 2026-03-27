@@ -9,6 +9,7 @@ import { tokens } from "@fluentui/react-components";
 import {
     BorderNoneRegular,
     BorderOutsideRegular,
+    BubbleMultipleRegular,
     CameraRegular,
     EditRegular,
     EyeOffRegular,
@@ -100,7 +101,7 @@ export const NodeExplorerServiceDefinition: ServiceDefinition<[], [ISceneExplore
 
                 return {
                     get name() {
-                        return node.name;
+                        return node.name || `Unnamed ${node.getClassName()}`;
                     },
                     onChange: onChangeObservable,
                     dispose: () => {
@@ -117,6 +118,8 @@ export const NodeExplorerServiceDefinition: ServiceDefinition<[], [ISceneExplore
                     <MyLocationRegular color={tokens.colorPaletteBlueForeground2} />
                 ) : node instanceof Camera ? (
                     <CameraRegular color={tokens.colorPaletteGreenForeground2} />
+                ) : node instanceof ClusteredLightContainer ? (
+                    <BubbleMultipleRegular color={tokens.colorPaletteYellowForeground2} />
                 ) : node instanceof Light ? (
                     <LightbulbRegular color={tokens.colorPaletteYellowForeground2} />
                 ) : (

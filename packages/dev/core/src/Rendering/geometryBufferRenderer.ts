@@ -55,7 +55,7 @@ const Uniforms = [
     "morphTargetCount",
     "morphTargetTextureInfo",
     "morphTargetTextureIndices",
-    "boneTextureWidth",
+    "boneTextureInfo",
 ];
 AddClipPlaneUniforms(Uniforms);
 
@@ -706,7 +706,6 @@ export class GeometryBufferRenderer {
                     const pbrMaterial = material as OpenPBRMaterial;
 
                     defines.push("#define METALLICWORKFLOW");
-                    metallicWorkflow = true;
                     defines.push("#define METALLIC");
                     defines.push("#define ROUGHNESS");
                     if (pbrMaterial._useRoughnessFromMetallicTextureGreen && pbrMaterial.baseMetalnessTexture) {
@@ -1275,10 +1274,10 @@ export class GeometryBufferRenderer {
                 if (renderingMesh.useBones && renderingMesh.computeBonesUsingShaders && renderingMesh.skeleton) {
                     const skeleton = renderingMesh.skeleton;
 
-                    if (skeleton.isUsingTextureForMatrices && effect.getUniformIndex("boneTextureWidth") > -1) {
+                    if (skeleton.isUsingTextureForMatrices && effect.getUniformIndex("boneTextureInfo") > -1) {
                         const boneTexture = skeleton.getTransformMatrixTexture(renderingMesh);
                         effect.setTexture("boneSampler", boneTexture);
-                        effect.setFloat("boneTextureWidth", 4.0 * (skeleton.bones.length + 1));
+                        effect.setFloat2("boneTextureInfo", skeleton._textureWidth, skeleton._textureHeight);
                     } else {
                         effect.setMatrices("mBones", renderingMesh.skeleton.getTransformMatrices(renderingMesh));
                     }
