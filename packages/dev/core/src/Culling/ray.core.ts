@@ -2,6 +2,7 @@ import { Epsilon } from "core/Maths/math.constants";
 import { Matrix, TmpVectors, Vector3 } from "core/Maths/math.vector";
 import { BuildArray } from "core/Misc/arrayTools";
 import { IntersectionInfo } from "../Collisions/intersectionInfo";
+import { type BoundingInfo } from "./boundingInfo";
 import { type BoundingBox } from "./boundingBox";
 import { type BoundingSphere } from "./boundingSphere";
 import { type DeepImmutable, type float, type Nullable } from "core/types";
@@ -828,6 +829,19 @@ function InternalPickForMesh(
 ) {
     const ray = rayFunction(world, mesh.enableDistantPicking);
 
+    return InternalPickForMeshWithRay(pickingInfo, mesh, world, ray, fastCheck, onlyBoundingInfo, trianglePredicate, skipBoundingInfo);
+}
+
+function InternalPickForMeshWithRay(
+    pickingInfo: Nullable<PickingInfo>,
+    mesh: AbstractMesh,
+    world: Matrix,
+    ray: Ray,
+    fastCheck?: boolean,
+    onlyBoundingInfo?: boolean,
+    trianglePredicate?: TrianglePickingPredicate,
+    skipBoundingInfo?: boolean
+) {
     const result = mesh.intersects(ray, fastCheck, trianglePredicate, onlyBoundingInfo, world, skipBoundingInfo);
     if (!result || !result.hit) {
         return null;
@@ -838,6 +852,26 @@ function InternalPickForMesh(
     }
 
     return result;
+}
+
+function GetThinInstancePickingIntersectionThreshold(className: string, mesh: AbstractMesh): number {
+    return className === "InstancedLinesMesh" || className === "LinesMesh" ? (mesh as any).intersectionThreshold : 0;
+}
+
+function ThinInstanceIntersectsRawBoundingInfo(
+    rayFunction: (world: Matrix, enableDistantPicking: boolean) => Ray,
+    mesh: AbstractMesh,
+    world: Matrix,
+    rawBoundingInfo: BoundingInfo,
+    intersectionThreshold: number
+): Nullable<Ray> {
+    const ray = rayFunction(world, mesh.enableDistantPicking);
+
+    if (!ray.intersectsSphere(rawBoundingInfo.boundingSphere, intersectionThreshold) || !ray.intersectsBox(rawBoundingInfo.boundingBox, intersectionThreshold)) {
+        return null;
+    }
+
+    return ray;
 }
 
 function InternalPick(
@@ -876,6 +910,10 @@ function InternalPick(
                     // the user only asked for a bounding info check so we can return
                     return result;
                 }
+                const thinInstanceClassName = mesh.getClassName();
+                // GreasedLineMesh has a custom width-aware pick path, so the generic raw sphere+box precheck is not safe there.
+                const thinInstanceRawBoundingInfo = thinInstanceClassName === "GreasedLineMesh" ? null : mesh.rawBoundingInfo;
+                const thinInstanceIntersectionThreshold = thinInstanceRawBoundingInfo ? GetThinInstancePickingIntersectionThreshold(thinInstanceClassName, mesh) : 0;
                 const thinMatrixData = (mesh as Mesh)._thinInstanceDataStorage.matrixData;
                 if (thinMatrixData) {
                     const thinMatrix = TmpVectors.Matrix[0];
@@ -887,7 +925,18 @@ function InternalPick(
                         }
                         Matrix.FromArrayToRef(thinMatrixData, index << 4, thinMatrix);
                         thinMatrix.multiplyToRef(world, combinedWorld);
-                        const result = picker(pickingInfo, rayFunction, mesh, combinedWorld, fastCheck, onlyBoundingInfo, trianglePredicate, true);
+                        const thinInstanceRay = thinInstanceRawBoundingInfo
+                            ? ThinInstanceIntersectsRawBoundingInfo(rayFunction, mesh, combinedWorld, thinInstanceRawBoundingInfo, thinInstanceIntersectionThreshold)
+                            : null;
+
+                        if (thinInstanceRawBoundingInfo && !thinInstanceRay) {
+                            continue;
+                        }
+
+                        const result: Nullable<PickingInfo> =
+                            picker === InternalPickForMesh && thinInstanceRay
+                                ? InternalPickForMeshWithRay(pickingInfo, mesh, combinedWorld, thinInstanceRay, fastCheck, onlyBoundingInfo, trianglePredicate, true)
+                                : picker(pickingInfo, rayFunction, mesh, combinedWorld, fastCheck, onlyBoundingInfo, trianglePredicate, true);
 
                         if (result) {
                             pickingInfo = result;
@@ -947,6 +996,10 @@ function InternalMultiPick(
         if (mesh.hasThinInstances && (mesh as Mesh).thinInstanceEnablePicking) {
             const result = picker(null, rayFunction, mesh, world, true, true, trianglePredicate);
             if (result) {
+                const thinInstanceClassName = mesh.getClassName();
+                // GreasedLineMesh has a custom width-aware pick path, so the generic raw sphere+box precheck is not safe there.
+                const thinInstanceRawBoundingInfo = thinInstanceClassName === "GreasedLineMesh" ? null : mesh.rawBoundingInfo;
+                const thinInstanceIntersectionThreshold = thinInstanceRawBoundingInfo ? GetThinInstancePickingIntersectionThreshold(thinInstanceClassName, mesh) : 0;
                 const thinMatrixData = (mesh as Mesh)._thinInstanceDataStorage.matrixData;
                 if (thinMatrixData) {
                     const thinMatrix = TmpVectors.Matrix[0];
@@ -958,7 +1011,18 @@ function InternalMultiPick(
                         }
                         Matrix.FromArrayToRef(thinMatrixData, index << 4, thinMatrix);
                         thinMatrix.multiplyToRef(world, combinedWorld);
-                        const result = picker(null, rayFunction, mesh, combinedWorld, false, false, trianglePredicate, true);
+                        const thinInstanceRay = thinInstanceRawBoundingInfo
+                            ? ThinInstanceIntersectsRawBoundingInfo(rayFunction, mesh, combinedWorld, thinInstanceRawBoundingInfo, thinInstanceIntersectionThreshold)
+                            : null;
+
+                        if (thinInstanceRawBoundingInfo && !thinInstanceRay) {
+                            continue;
+                        }
+
+                        const result: Nullable<PickingInfo> =
+                            picker === InternalPickForMesh && thinInstanceRay
+                                ? InternalPickForMeshWithRay(null, mesh, combinedWorld, thinInstanceRay, false, false, trianglePredicate, true)
+                                : picker(null, rayFunction, mesh, combinedWorld, false, false, trianglePredicate, true);
 
                         if (result) {
                             result.thinInstanceIndex = index;
