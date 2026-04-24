@@ -1,5 +1,5 @@
 import { type Engine, NullEngine } from "core/Engines";
-import { Matrix, Vector3 } from "core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "core/Maths/math.vector";
 import { type Mesh, MeshBuilder } from "core/Meshes";
 import { Scene } from "core/scene";
 import { Ray } from "core/Culling/ray";
@@ -152,6 +152,55 @@ describe("ThinInstance picking", () => {
             expect(normal!.x).toBeCloseTo(0);
             expect(normal!.y).toBeCloseTo(1);
             expect(normal!.z).toBeCloseTo(0);
+        });
+
+        it("picks thin instances with mirrored non-uniform transforms", () => {
+            const transform = Matrix.Compose(new Vector3(-2, 0.5, 1.5), Quaternion.FromEulerAngles(0, 0, Math.PI / 4), new Vector3(3, 1, 0));
+            box.thinInstanceAdd(transform, true);
+            box.thinInstanceEnablePicking = true;
+
+            const ray = new Ray(new Vector3(3, 5, 0), new Vector3(0, -1, 0));
+            const info = scene.pickWithRay(ray);
+
+            expect(info!.hit).toBe(true);
+            expect(info!.thinInstanceIndex).toBe(0);
+            expect(info!.pickedMesh).toBe(box);
+        });
+
+        it("preserves thin-instance picking when rawBoundingInfo is missing", () => {
+            box.thinInstanceAdd(Matrix.Translation(5, 0, 0), false);
+            box.thinInstanceAdd(Matrix.Translation(10, 0, 0), true);
+            box.thinInstanceEnablePicking = true;
+
+            expect(box.getBoundingInfo().boundingBox.minimum.x).toBeCloseTo(4.5);
+            box.rawBoundingInfo = null;
+
+            const ray = new Ray(new Vector3(5, 5, 0), new Vector3(0, -1, 0));
+            const info = scene.pickWithRay(ray);
+
+            expect(info!.hit).toBe(true);
+            expect(info!.thinInstanceIndex).toBe(0);
+            expect(info!.pickedMesh).toBe(box);
+        });
+
+        it("uses the line intersectionThreshold for thin-instance raw-bounds checks", () => {
+            const line = MeshBuilder.CreateLines(
+                "line",
+                {
+                    points: [new Vector3(0, -1, 0), new Vector3(0, 1, 0)],
+                },
+                scene
+            );
+            line.intersectionThreshold = 0.1;
+            line.thinInstanceAdd(Matrix.Translation(5, 0, 0), true);
+            line.thinInstanceEnablePicking = true;
+
+            const ray = new Ray(new Vector3(5.05, 2, 0), new Vector3(0, -1, 0));
+            const info = scene.pickWithRay(ray);
+
+            expect(info!.hit).toBe(true);
+            expect(info!.thinInstanceIndex).toBe(0);
+            expect(info!.pickedMesh).toBe(line);
         });
     });
 
